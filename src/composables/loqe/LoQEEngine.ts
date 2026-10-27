@@ -229,7 +229,16 @@ export class LoQEEngine {
 
       // 3. Instantiate DuckDB
       this.db = new duckdb.AsyncDuckDB(logger, this.worker);
-      await this.db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      const pthreadBlobUrl = bundle.pthreadWorker
+        ? URL.createObjectURL(
+            new Blob([createWorkerBootstrap(bundle.pthreadWorker)], { type: 'text/javascript' }),
+          )
+        : undefined;
+      try {
+        await this.db.instantiate(bundle.mainModule, pthreadBlobUrl);
+      } finally {
+        if (pthreadBlobUrl) URL.revokeObjectURL(pthreadBlobUrl);
+      }
 
       // 4. Open in-memory database.
       // allowUnsignedExtensions: we serve our OWN vendored extensions from the
