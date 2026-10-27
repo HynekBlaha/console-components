@@ -12,22 +12,27 @@ describe('DuckDB thread settings', () => {
     expect(normalizeThreadCount('16', 32)).toBe(16);
   });
 
-  it('applies a changed setting to the existing connection', async () => {
-    const query = vi.fn().mockResolvedValue(undefined);
-    expect(await applyThreadSetting({ query }, 16, 32, 8)).toBe(16);
+  it('reapplies the preference after SQL changes the database setting', async () => {
+    let databaseThreads = 8;
+    const query = vi.fn(async (sql: string) => {
+      databaseThreads = Number(sql.split(' = ')[1]);
+    });
+    expect(await applyThreadSetting({ query }, 16, 32)).toBe(16);
     expect(query).toHaveBeenCalledExactlyOnceWith('SET threads = 16');
-    await applyThreadSetting({ query }, 16, 32, 16);
-    expect(query).toHaveBeenCalledTimes(1);
+    databaseThreads = 4;
+    await applyThreadSetting({ query }, 16, 32);
+    expect(databaseThreads).toBe(16);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('does not raise the single-threaded runtime setting', async () => {
     const query = vi.fn();
-    expect(await applyThreadSetting({ query }, 32, 1, 1)).toBe(1);
-    expect(query).not.toHaveBeenCalled();
+    expect(await applyThreadSetting({ query }, 32, 1)).toBe(1);
+    expect(query).toHaveBeenCalledExactlyOnceWith('SET threads = 1');
   });
 
   it('reports a rejected runtime change', async () => {
     const query = vi.fn().mockRejectedValue(new Error('Query interrupted'));
-    await expect(applyThreadSetting({ query }, 16, 32, 8)).rejects.toThrow('Query interrupted');
+    await expect(applyThreadSetting({ query }, 16, 32)).rejects.toThrow('Query interrupted');
   });
 });

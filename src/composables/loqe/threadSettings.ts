@@ -11,9 +11,8 @@ export async function applyThreadSetting(
   connection: { query(sql: string): Promise<unknown> },
   requested: unknown,
   limit: number,
-  current: number,
 ): Promise<number> {
   const threads = normalizeThreadCount(requested, limit);
-  if (threads !== current) await connection.query(`SET threads = ${threads}`);
+  await connection.query(`SET threads = ${threads}`);
   return threads;
 }

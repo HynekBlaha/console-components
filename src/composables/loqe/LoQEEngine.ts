@@ -139,7 +139,6 @@ export class LoQEEngine {
   private installedExtensions = new Set<string>();
   private _activeConnection: any = null;
   private _cancelRequested = false;
-  private appliedThreads = 1;
   private threadLimit = 1;
   // Bundled (self-hosted) extension repository, resolved at init from the app
   // origin. Used by default so extensions load offline instead of from the CDN.
@@ -247,8 +246,8 @@ export class LoQEEngine {
       // fails ("signature is either missing or invalid"). Since we control the
       // extension binaries, allow unsigned so they load from our repo.
       const threadSettings = useDuckDBSettingsStore();
-      this.appliedThreads = normalizeThreadCount(threadSettings.threads, this.threadLimit);
-      await this.db.open({ allowUnsignedExtensions: true, maximumThreads: this.appliedThreads });
+      const threads = normalizeThreadCount(threadSettings.threads, this.threadLimit);
+      await this.db.open({ allowUnsignedExtensions: true, maximumThreads: threads });
       threadSettings.threadLimit = this.threadLimit;
 
       // 5. Connection pool
@@ -336,12 +335,7 @@ export class LoQEEngine {
     this._activeConnection = pooled.connection;
 
     try {
-      this.appliedThreads = await applyThreadSetting(
-        pooled.connection,
-        settingsStore.threads,
-        this.threadLimit,
-        this.appliedThreads,
-      );
+      await applyThreadSetting(pooled.connection, settingsStore.threads, this.threadLimit);
       // ── Timeout guardrail ─────────────────────────────────────────
       const exec = async (q: string): Promise<any> => {
         if (timeoutMs > 0) {
