@@ -7,6 +7,7 @@ import { CatalogManager } from './CatalogManager';
 import { useDuckDBSettingsStore, DUCKDB_DEFAULTS } from '@/stores/duckdbSettings';
 import { explainQueryFailure } from './queryError';
 import { createWorkerBootstrap } from './workerBootstrap';
+import { MAX_THREADS, normalizeThreadCount, applyThreadSetting } from './threadSettings';
 import { toPlainCellValue } from './arrowValue';
 
 /**
@@ -138,6 +139,8 @@ export class LoQEEngine {
   private installedExtensions = new Set<string>();
   private _activeConnection: any = null;
   private _cancelRequested = false;
+  private appliedThreads = 1;
+  private threadLimit = 1;
   // Bundled (self-hosted) extension repository, resolved at init from the app
   // origin. Used by default so extensions load offline instead of from the CDN.
   private bundledExtensionRepo = '';
@@ -192,24 +195,26 @@ export class LoQEEngine {
       // DuckDB appends `/v<version>/wasm_<platform>/<name>.duckdb_extension.wasm`
       // to this repo base, which matches the vendored layout under
       // public/duckdb/extensions/ (see vite.config copyDuckDBFiles). The core
-      // build reports v1.5.5, and we vendor v1.5.5 extensions, so the ABI matches;
+      // build reports v2.0.0, and we vendor v2.0.0 extensions, so the ABI matches;
       // allowUnsignedExtensions (below) covers signature validation.
       // NOTE: keep the vendored extension versions in sync with the DuckDB core
       // version whenever @duckdb/duckdb-wasm is bumped, or INSTALL will 404.
       this.bundledExtensionRepo = `${baseUrl}/duckdb/extensions`;
 
       const bundles: duckdb.DuckDBBundles = {
-        mvp: {
-          mainModule: `${baseUrl}/duckdb/duckdb-mvp.wasm`,
-          mainWorker: `${baseUrl}/duckdb/duckdb-browser-mvp.worker.js`,
-        },
-        eh: {
-          mainModule: `${baseUrl}/duckdb/duckdb-eh.wasm`,
-          mainWorker: `${baseUrl}/duckdb/duckdb-browser-eh.worker.js`,
+        base: {
+          mainModule: `${baseUrl}/duckdb/duckdb-base.wasm`,
+          mainWorker: `${baseUrl}/duckdb/duckdb-browser-base.worker.js`,
         },
       };
 
+      bundles.threads = {
+        mainModule: `${baseUrl}/duckdb/duckdb-threads.wasm`,
+        mainWorker: `${baseUrl}/duckdb/duckdb-browser-threads.worker.js`,
+        pthreadWorker: `${baseUrl}/duckdb/duckdb-browser-threads.pthread.worker.js`,
+      };
       const bundle = await duckdb.selectBundle(bundles);
+      this.threadLimit = bundle.pthreadWorker ? MAX_THREADS : 1;
       const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.ERROR);
 
       // 2. Create Web Worker via Blob URL (avoids CORS issues)
@@ -224,7 +229,7 @@ export class LoQEEngine {
 
       // 3. Instantiate DuckDB
       this.db = new duckdb.AsyncDuckDB(logger, this.worker);
-      await this.db.instantiate(bundle.mainModule);
+      await this.db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
       // 4. Open in-memory database.
       // allowUnsignedExtensions: we serve our OWN vendored extensions from the
@@ -232,7 +237,10 @@ export class LoQEEngine {
       // doesn't match the released signed extensions, so signature validation
       // fails ("signature is either missing or invalid"). Since we control the
       // extension binaries, allow unsigned so they load from our repo.
-      await this.db.open({ allowUnsignedExtensions: true });
+      const threadSettings = useDuckDBSettingsStore();
+      this.appliedThreads = normalizeThreadCount(threadSettings.threads, this.threadLimit);
+      await this.db.open({ allowUnsignedExtensions: true, maximumThreads: this.appliedThreads });
+      threadSettings.threadLimit = this.threadLimit;
 
       // 5. Connection pool
       this._pool = new ConnectionPool(this.db, this.config.maxConnections ?? 4);
@@ -319,6 +327,12 @@ export class LoQEEngine {
     this._activeConnection = pooled.connection;
 
     try {
+      this.appliedThreads = await applyThreadSetting(
+        pooled.connection,
+        settingsStore.threads,
+        this.threadLimit,
+        this.appliedThreads,
+      );
       // ── Timeout guardrail ─────────────────────────────────────────
       const exec = async (q: string): Promise<any> => {
         if (timeoutMs > 0) {
@@ -653,6 +667,7 @@ export class LoQEEngine {
   }
 
   private destroy(): void {
+    useDuckDBSettingsStore().threadLimit = 1;
     this.tokens.dispose();
     this.catalogs.dispose();
     this._pool?.drain().catch(() => {});

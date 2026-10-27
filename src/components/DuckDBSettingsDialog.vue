@@ -49,6 +49,21 @@
           :rules="[maxRowsRule]"
           class="mb-3" />
 
+        <v-select
+          v-model="threadsModel"
+          :items="threadOptions"
+          label="Threads"
+          :hint="
+            store.threadLimit > 1
+              ? 'Applies to the next query. More threads may use more memory.'
+              : 'Parallel execution is unavailable in this session.'
+          "
+          persistent-hint
+          variant="outlined"
+          density="comfortable"
+          :disabled="store.threadLimit <= 1"
+          class="mb-3" />
+
         <!-- Query Timeout -->
         <v-select
           v-model="store.queryTimeoutSeconds"
@@ -173,6 +188,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { normalizeThreadCount } from '@/composables/loqe/threadSettings';
 import {
   useDuckDBSettingsStore,
   ROW_LIMIT_OPTIONS,
@@ -197,6 +213,13 @@ const props = defineProps<{
 
 const store = useDuckDBSettingsStore();
 const dialogVisible = ref(false);
+const threadOptions = computed(() => Array.from({ length: store.threadLimit }, (_, i) => i + 1));
+const threadsModel = computed({
+  get: () => normalizeThreadCount(store.threads, store.threadLimit),
+  set: (value: number) => {
+    store.threads = normalizeThreadCount(value, store.threadLimit);
+  },
+});
 
 // ── Max rows combobox ───────────────────────────────────────────────
 // With :return-object="false" + item-value="value", the combobox emits

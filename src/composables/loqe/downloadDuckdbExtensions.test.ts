@@ -59,8 +59,8 @@ function runDownloader(skipDownload = false) {
 describe('DuckDB extension cache cleanup', () => {
   it('prunes stale versions from a warm cache and preserves configured and unrelated paths', async () => {
     const cachedFiles: string[] = [];
-    for (const platform of ['wasm_eh', 'wasm_mvp']) {
-      const platformDir = join(cacheDir, 'v1.5.5', platform);
+    for (const platform of ['wasm_eh', 'wasm_threads']) {
+      const platformDir = join(cacheDir, 'v2.0.0', platform);
       await mkdir(platformDir, { recursive: true });
       for (const extension of ['httpfs', 'iceberg', 'avro', 'parquet', 'json', 'azure_wasm']) {
         const path = join(platformDir, `${extension}.duckdb_extension.wasm`);
@@ -82,7 +82,7 @@ describe('DuckDB extension cache cleanup', () => {
 
     const firstRun = await runDownloader();
     expect(firstRun.stdout).toContain('all extensions already vendored');
-    expect((await readdir(cacheDir)).sort()).toEqual(['notes', 'v1.4.2', 'v1.4.3', 'v1.5.5']);
+    expect((await readdir(cacheDir)).sort()).toEqual(['notes', 'v1.4.2', 'v1.4.3', 'v2.0.0']);
     expect(await readFile(join(outsideDir, 'keep.txt'), 'utf8')).toBe('unrelated content');
     expect(await readFile(join(cacheDir, 'v1.4.3'), 'utf8')).toBe('unrelated file');
     for (const path of cachedFiles) {
@@ -91,17 +91,17 @@ describe('DuckDB extension cache cleanup', () => {
 
     const secondRun = await runDownloader();
     expect(secondRun.stdout).not.toContain('removed stale extension version');
-    expect((await readdir(cacheDir)).sort()).toEqual(['notes', 'v1.4.2', 'v1.4.3', 'v1.5.5']);
+    expect((await readdir(cacheDir)).sort()).toEqual(['notes', 'v1.4.2', 'v1.4.3', 'v2.0.0']);
   });
 
   it('prunes stale versions when downloads are explicitly skipped', async () => {
     await mkdir(join(cacheDir, 'v1.4.4'), { recursive: true });
-    await mkdir(join(cacheDir, 'v1.5.5'));
+    await mkdir(join(cacheDir, 'v2.0.0'));
 
     const result = await runDownloader(true);
 
     expect(result.stdout).toContain('skipping download');
-    expect(await readdir(cacheDir)).toEqual(['v1.5.5']);
+    expect(await readdir(cacheDir)).toEqual(['v2.0.0']);
   });
 
   it('allows an absent cache when downloads are explicitly skipped', async () => {

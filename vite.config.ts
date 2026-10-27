@@ -2,16 +2,14 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import dts from 'vite-plugin-dts';
 import { resolve } from 'path';
-import { existsSync, mkdirSync, copyFileSync, cpSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, cpSync, rmSync, readFileSync } from 'fs';
 
 const duckdbFiles = [
-  'duckdb-browser-coi.pthread.worker.js',
-  'duckdb-browser-coi.worker.js',
-  'duckdb-browser-eh.worker.js',
-  'duckdb-browser-mvp.worker.js',
-  'duckdb-coi.wasm',
-  'duckdb-eh.wasm',
-  'duckdb-mvp.wasm',
+  'duckdb-browser-base.worker.js',
+  'duckdb-base.wasm',
+  'duckdb-threads.wasm',
+  'duckdb-browser-threads.worker.js',
+  'duckdb-browser-threads.pthread.worker.js',
 ];
 
 // Copy DuckDB WASM files from @duckdb/duckdb-wasm npm package into public/duckdb/
@@ -22,23 +20,33 @@ function copyDuckDBFiles() {
     buildStart() {
       const srcDir = resolve(__dirname, 'node_modules/@duckdb/duckdb-wasm/dist');
       const destDir = resolve(__dirname, 'public/duckdb');
+      const experimentDir = process.env.DUCKDB_THREADED_ARTIFACT_DIR;
+      if (!experimentDir)
+        throw new Error('Set DUCKDB_THREADED_ARTIFACT_DIR to the threaded build artifact.');
+      const manifest = JSON.parse(readFileSync(resolve(experimentDir, 'manifest.json'), 'utf8'));
+      if (manifest.pthread_pool_size !== 32 || manifest.duckdb_version !== 'v2.0.0') {
+        throw new Error('This experiment requires DuckDB 2.0.0 with a 32-worker pool.');
+      }
+      const sourceFile = (file: string) =>
+        resolve(file.includes('threads') ? resolve(experimentDir, 'runtime') : srcDir, file);
 
       if (!existsSync(srcDir)) {
         throw new Error(`DuckDB WASM package not found at ${srcDir}. Run "npm install" first.`);
       }
 
-      const missing = duckdbFiles.filter((file) => !existsSync(resolve(srcDir, file)));
+      const missing = duckdbFiles.filter((file) => !existsSync(sourceFile(file)));
       if (missing.length > 0) {
         throw new Error(`Missing DuckDB WASM files in ${srcDir}:\n  - ${missing.join('\n  - ')}`);
       }
 
+      rmSync(destDir, { recursive: true, force: true });
       mkdirSync(destDir, { recursive: true });
       duckdbFiles.forEach((file) => {
-        copyFileSync(resolve(srcDir, file), resolve(destDir, file));
+        copyFileSync(sourceFile(file), resolve(destDir, file));
       });
       console.log('Copied DuckDB WASM files from @duckdb/duckdb-wasm');
 
-      // Vendor the DuckDB extensions (iceberg/httpfs/avro, both wasm variants) so
+      // Vendor both DuckDB extension platforms so
       // LoQE installs them from our own origin instead of extensions.duckdb.org —
       // works airgapped/offline. Downloaded at build time (and cached) by
       // scripts/download-duckdb-extensions.mjs (wired to prebuild/predev),

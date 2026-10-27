@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import { defineStore } from 'pinia';
+import { DEFAULT_THREADS } from '@/composables/loqe/threadSettings';
 
 /**
  * Detect the browser's JS heap limit in MB (Chromium-only).
@@ -46,6 +47,7 @@ const _memDefaults = computeMemoryDefaults();
  * These are conservative values that should work on most machines.
  */
 export const DUCKDB_DEFAULTS = {
+  threads: DEFAULT_THREADS,
   /** Max rows to materialize into JS from an Arrow result. */
   maxResultRows: 10_000,
   /** Query execution timeout in seconds (0 = no timeout). */
@@ -88,6 +90,7 @@ export const TIMEOUT_OPTIONS = [
 ] as const;
 
 export interface DuckDBSettings {
+  threads: number;
   maxResultRows: number;
   queryTimeoutSeconds: number;
   memoryWarningThresholdMB: number;
@@ -107,6 +110,8 @@ export const useDuckDBSettingsStore = defineStore(
   () => {
     // ── State ───────────────────────────────────────────────────────
 
+    const threads = ref<number>(DUCKDB_DEFAULTS.threads);
+    const threadLimit = ref(1);
     const maxResultRows = ref<number>(DUCKDB_DEFAULTS.maxResultRows);
     const queryTimeoutSeconds = ref(DUCKDB_DEFAULTS.queryTimeoutSeconds);
     const memoryWarningThresholdMB = ref(DUCKDB_DEFAULTS.memoryWarningThresholdMB);
@@ -123,6 +128,7 @@ export const useDuckDBSettingsStore = defineStore(
 
     /** All settings as a plain object (handy for passing to composables). */
     const settings = computed<DuckDBSettings>(() => ({
+      threads: threads.value,
       maxResultRows: maxResultRows.value,
       queryTimeoutSeconds: queryTimeoutSeconds.value,
       memoryWarningThresholdMB: memoryWarningThresholdMB.value,
@@ -134,6 +140,7 @@ export const useDuckDBSettingsStore = defineStore(
     // ── Actions ─────────────────────────────────────────────────────
 
     function resetToDefaults() {
+      threads.value = DUCKDB_DEFAULTS.threads;
       maxResultRows.value = DUCKDB_DEFAULTS.maxResultRows;
       queryTimeoutSeconds.value = DUCKDB_DEFAULTS.queryTimeoutSeconds;
       memoryWarningThresholdMB.value = DUCKDB_DEFAULTS.memoryWarningThresholdMB;
@@ -238,6 +245,8 @@ export const useDuckDBSettingsStore = defineStore(
 
     return {
       // State
+      threads,
+      threadLimit,
       maxResultRows,
       queryTimeoutSeconds,
       memoryWarningThresholdMB,
@@ -260,6 +269,7 @@ export const useDuckDBSettingsStore = defineStore(
     persistedState: {
       key: 'duckdbSettings',
       persist: true,
+      excludePaths: ['threadLimit'],
     },
   },
 );

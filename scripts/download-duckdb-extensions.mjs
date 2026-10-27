@@ -14,7 +14,7 @@
  *
  * VERSION LOCK: the extension version MUST match the DuckDB core reported by the
  * pinned `@duckdb/duckdb-wasm`. Update EXTENSION_VERSIONS when bumping that dep,
- * or INSTALL will 404 / hit an ABI mismatch. Current pin: DuckDB 1.5.5 → v1.5.5.
+ * or INSTALL will 404 / hit an ABI mismatch. Current pin: DuckDB 2.0.0 → v2.0.0.
  * The community extension (azure_wasm) is published per core version too, so a
  * core bump also needs a matching community build to exist — check
  * https://community-extensions.duckdb.org/v<version>/wasm_eh/ before bumping.
@@ -28,7 +28,7 @@ import {
   readSync,
   closeSync,
 } from 'node:fs';
-import { readdir, rm } from 'node:fs/promises';
+import { readdir, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Buffer } from 'node:buffer';
@@ -40,8 +40,8 @@ const BASE_URL = 'https://extensions.duckdb.org';
 const COMMUNITY_BASE_URL = 'https://community-extensions.duckdb.org';
 
 // DuckDB extension repository coordinates. Keep in sync with @duckdb/duckdb-wasm.
-const EXTENSION_VERSIONS = ['v1.5.5'];
-const PLATFORMS = ['wasm_eh', 'wasm_mvp'];
+const EXTENSION_VERSIONS = ['v2.0.0'];
+const PLATFORMS = ['wasm_eh'];
 const EXTENSIONS = ['httpfs', 'iceberg', 'avro', 'parquet', 'json'];
 // Community extensions: separate repository, identical `/v<ver>/<platform>/` layout.
 // azure_wasm gives DuckDB-WASM an `abfss://` filesystem + `azure` secret type, which
@@ -101,9 +101,44 @@ async function download(url, dest) {
   return buf.length;
 }
 
+async function stageLocalAzureWasm() {
+  const sourceDir = process.env.DUCKDB_AZURE_WASM_DIR;
+  if (!sourceDir) return;
+
+  for (const platform of PLATFORMS) {
+    const source = resolve(sourceDir, platform, 'azure_wasm.duckdb_extension.wasm');
+    const bytes = await readFile(source);
+    if (!bytes.subarray(0, 4).equals(WASM_MAGIC)) {
+      throw new Error(`Not a WASM binary (bad magic bytes) from ${source}`);
+    }
+    for (const version of EXTENSION_VERSIONS) {
+      const destination = resolve(OUT_DIR, version, platform, 'azure_wasm.duckdb_extension.wasm');
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, bytes);
+      console.log(`[duckdb-ext] local azure_wasm: ${source} -> ${version}/${platform}`);
+    }
+  }
+}
+
+async function stageThreadedExtensions() {
+  const sourceDir = process.env.DUCKDB_THREADED_ARTIFACT_DIR;
+  if (!sourceDir) return;
+  for (const name of [...EXTENSIONS, ...COMMUNITY_EXTENSIONS]) {
+    const relative = `v2.0.0/wasm_threads/${name}.duckdb_extension.wasm`;
+    const source = resolve(sourceDir, 'extensions', relative);
+    const bytes = await readFile(source);
+    if (!bytes.subarray(0, 4).equals(WASM_MAGIC)) throw new Error(`Not a WASM binary: ${source}`);
+    const destination = resolve(OUT_DIR, relative);
+    await mkdir(dirname(destination), { recursive: true });
+    await writeFile(destination, bytes);
+  }
+}
+
 async function main() {
   // Run even for warm caches and skipped downloads so old versions are not shipped.
   await pruneStaleVersions();
+  await stageLocalAzureWasm();
+  await stageThreadedExtensions();
 
   if (process.env.DUCKDB_EXTENSIONS_SKIP_DOWNLOAD === '1') {
     console.log('[duckdb-ext] DUCKDB_EXTENSIONS_SKIP_DOWNLOAD=1 — skipping download');
