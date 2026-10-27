@@ -1,4 +1,5 @@
-export const MAX_THREADS = 32;
+// Reserve workers for the scheduler to replace its existing threads.
+export const MAX_THREADS = 16;
 export const DEFAULT_THREADS = 8;
 
 export function normalizeThreadCount(value: unknown, limit = MAX_THREADS): number {

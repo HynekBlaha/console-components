@@ -7,6 +7,7 @@ describe('DuckDB thread settings', () => {
   });
 
   it('respects the runtime capacity and single-threaded fallback', () => {
+    expect(normalizeThreadCount(32)).toBe(16);
     expect(normalizeThreadCount(64, 32)).toBe(32);
     expect(normalizeThreadCount(8, 1)).toBe(1);
     expect(normalizeThreadCount('16', 32)).toBe(16);
