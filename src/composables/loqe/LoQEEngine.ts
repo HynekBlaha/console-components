@@ -131,6 +131,7 @@ export class LoQEEngine {
 
   private db: AsyncDuckDB | null = null;
   private worker: Worker | null = null;
+  private workerBlobUrl: string | null = null;
   private config: LoQEConfig;
   private _isInitialized = false;
   private _isInitializing = false;
@@ -221,8 +222,9 @@ export class LoQEEngine {
       const blobUrl = URL.createObjectURL(
         new Blob([createWorkerBootstrap(workerUrl)], { type: 'text/javascript' }),
       );
+      // Emscripten 6 starts pthreads from the main worker script URL.
+      this.workerBlobUrl = blobUrl;
       this.worker = new Worker(blobUrl);
-      URL.revokeObjectURL(blobUrl);
 
       this.worker.onerror = (e) => console.error('[LoQE] Worker error:', e);
 
@@ -298,6 +300,7 @@ export class LoQEEngine {
       console.info('%c[LoQE] engine ready', 'color:#1976d2');
     } catch (e) {
       console.error('[LoQE] Initialisation failed:', e);
+      this.destroy();
       throw e;
     } finally {
       this._isInitializing = false;
@@ -683,6 +686,11 @@ export class LoQEEngine {
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
+    }
+
+    if (this.workerBlobUrl) {
+      URL.revokeObjectURL(this.workerBlobUrl);
+      this.workerBlobUrl = null;
     }
 
     this._isInitialized = false;
